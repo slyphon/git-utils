@@ -1,0 +1,81 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'tmpdir'
+require 'fileutils'
+
+class CleanRoom
+  include FileUtils
+
+  HELP = <<-EOS
+Usage: #{File.basename($0)} [opts] command 
+
+Clone the current HEAD (or 'treeish' if the -t option is given) into a
+temporary directory then runs command. The command given will be run in a
+subshell, so it will be subject globbing/expansion
+
+Exits with the status of command, the temp directory will be removed when
+command exits
+
+Options:
+
+  EOS
+
+  SHELL = ENV['SHELL']
+
+  attr_reader :tmpdir
+
+  def initialize
+    now = Time.now
+    timestamp = now.strftime("%Y%m%d%H%M%S_#{now.tv_usec}")
+
+    @tree = nil
+    @tmpdir = File.join(Dir.tmpdir, "#{File.basename(Dir.getwd)}_#{$$}.#{timestamp}")
+  end
+
+  def optparse
+    @optparse ||= OptionParser.new do |o|
+      o.banner = HELP
+      o.on('-t', '--treeish ARG', 'the treeish (branch,tag) to clone into a tmp dir') { |t| @tree = t }
+      o.on('-h', '--help', "you're reading it") { help! }
+    end
+  end
+
+  def help!
+    $stderr.puts optparse
+    exit 1
+  end
+
+  def sh(*cmd)
+    raise "command failed: #{cmd.join(' ')}" unless system(*cmd)
+  end
+
+  def main
+    optparse.parse!
+    help! if ARGV.empty?
+
+    @tree ||= `git symbolic-ref HEAD`.chomp.sub(%r%^refs/heads/%, '')
+
+    sh("git clone -- #{Dir.getwd} #{tmpdir}")
+
+    cd(tmpdir) do
+
+      if @tree != 'master'
+        remote = "origin/#{@tree}"
+        sh("git co --track -b #{@tree} #{remote}")
+      end
+
+      pid = fork do
+        exec(ARGV.join(' '))
+      end
+
+      _, st = Process.wait2(pid)
+
+      exit(st.exitstatus || 254)
+    end
+  ensure
+    rm_rf(tmpdir)
+  end
+end
+
+CleanRoom.new.main
