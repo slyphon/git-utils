@@ -10,12 +10,17 @@ class CleanRoom
   HELP = <<-EOS
 Usage: #{File.basename($0)} [opts] command 
 
-Clone the current HEAD (or 'treeish' if the -t option is given) into a
-temporary directory then runs command. The command given will be run in a
-subshell, so it will be subject globbing/expansion
+Clone the current HEAD (tag if the -t option is given, branch if the -b option
+is given) into a temporary directory then runs command. The command given will
+be run in a subshell, so it will be subject globbing/expansion
+
+If neither -t or -b options are given, will check out the current branch in the
+tempdir (using git co -b --track).
 
 Exits with the status of command, the temp directory will be removed when
 command exits
+
+Note: tag and branch options are mutually exclusive
 
 Options:
 
@@ -29,14 +34,15 @@ Options:
     now = Time.now
     timestamp = now.strftime("%Y%m%d%H%M%S_#{now.tv_usec}")
 
-    @tree = nil
+    @tree = @tag = @branch = nil
     @tmpdir = File.join(Dir.tmpdir, "#{File.basename(Dir.getwd)}_#{$$}.#{timestamp}")
   end
 
   def optparse
     @optparse ||= OptionParser.new do |o|
       o.banner = HELP
-      o.on('-t', '--treeish ARG', 'the treeish (branch,tag) to clone into a tmp dir') { |t| @tree = t }
+      o.on('-t', '--tag ARG', 'the tag to switch to in the tmp dir (will be a detached HEAD)') { |t| @tag = t }
+      o.on('-b', '--branch ARG', 'the branch to switch to in the tmp dir (will be a tracking branch)') { |t| @branch = t }
       o.on('-h', '--help', "you're reading it") { help! }
     end
   end
@@ -54,15 +60,23 @@ Options:
     optparse.parse!
     help! if ARGV.empty?
 
-    @tree ||= `git symbolic-ref HEAD`.chomp.sub(%r%^refs/heads/%, '')
+    if @tag and @branch
+      $stderr.puts "ERROR: please specify only one of --tag or --branch"
+      exit 1
+    end
+
+    @tree = `git symbolic-ref HEAD`.chomp.sub(%r%^refs/heads/%, '')
+
+    $stderr.puts "tag: #{@tag.inspect}, branch: #{@branch.inspect}, tree: #{@tree.inspect}"
 
     sh("git clone -- #{Dir.getwd} #{tmpdir}")
 
     cd(tmpdir) do
-
-      if @tree != 'master'
-        remote = "origin/#{@tree}"
-        sh("git co --track -b #{@tree} #{remote}")
+      if @tag
+        sh("git checkout refs/tags/#{@tag}")
+      elsif @branch or (@tree != 'master')
+        ref = @branch or @tree
+        sh("git checkout --track -b #{ref} origin/#{ref}")
       end
 
       pid = fork do
