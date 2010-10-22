@@ -1,6 +1,10 @@
-A small collection of git command-line subcommands implemented in ruby and intended to be distributed using rubygems. 
+A small collection of git command-line subcommands implemented in ruby and
+intended to be distributed using rubygems. 
 
-Currently, the only command in this collection is 'git cleanroom', which clones the current repository (and HEAD) into a temporary directory and executes a command on that checkout. It's primarily intended to create a package (gem, war, etc.) of a clean copy of a project at a given tag.
+Currently, the only command in this collection is 'git cleanroom', which clones
+the current repository (and HEAD) into a temporary directory and executes a
+command on that checkout. It's primarily intended to create a package (gem,
+war, etc.) of a clean copy of a project at a given tag.
 
 More to come as I port some of my other stuff to ruby. =)
 
