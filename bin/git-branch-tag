@@ -1,0 +1,100 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'tmpdir'
+require 'fileutils'
+
+class BranchTagger
+  HELP =<<-EOS
+Usage: #{File.basename($0)} [opts]
+
+Creates a motionbox-style branch tag of the current HEAD by default.
+
+If the current branch is 'dev/foobar' then the initial tag will be
+'dev/foobar/00000' and subsequent invocations will increment this number.
+
+If the --push (or -p) option is given, we will push this tag immediately
+after creation. These are "tag objects" and will be created with the message
+"${tagname}".
+
+There is a planned enhancement for doing major/minor/patch tags (coming soon).
+
+Options:
+
+  EOS
+
+  attr_reader :dry_run, :push
+
+  def initialize
+    @dry_run = @push = false
+  end
+
+  def help!
+    $stderr.puts optparse
+    exit 1
+  end
+
+  def sh(*cmd)
+    $stderr.puts cmd.join(' ')
+    raise "command failed: #{cmd.join(' ')}" unless system(*cmd)
+  end
+
+  def optparse
+    @optparse ||= OptionParser.new do |o|
+      o.banner = HELP
+      o.on('-n', '--dry-run', "show the tag that would be created, but don't actually commit") { @dry_run = true }
+      o.on('-p', '--push', 'push to origin immediately after creating tag') { @push = true }
+      o.on('-h', '--help', "you're reading it") { help! }
+    end
+  end
+
+  def current_tree
+    @current_tree ||= `git symbolic-ref HEAD`.chomp.sub(%r%^refs/heads/%, '')
+  end
+
+  def current_tags
+    @current_tags ||= `git tag -l '#{current_tree}/*'`.split("\n")
+  end
+
+  def next_tag
+    unless @next_tag 
+      if current_tags.empty?
+        next_num = 0
+      else
+        t = current_tags.sort.last
+        next_num = Integer(File.basename(t)[/0*(\d+)/, 1]) + 1
+      end
+
+      @next_tag = File.join(current_tree, '%05d' % [next_num])
+    end
+
+    @next_tag
+  end
+
+  def create_tag!
+    cmd = %W[git tag -a -m]  
+    cmd += [next_tag, next_tag]
+
+    sh(*cmd)
+  end
+
+  def main
+    optparse.parse!
+
+    sh("git fetch --tags")
+
+    if dry_run
+      $stderr.puts "Would create tag #{next_tag}"
+      exit 0
+    end
+
+    create_tag!
+
+    sh("git push --tags") if push
+
+    $stderr.puts "success!"
+  end
+end
+
+
+BranchTagger.new.main unless $TESTING
